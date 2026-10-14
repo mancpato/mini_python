@@ -19,6 +19,15 @@ OPERADORES_DOBLES = {"//", "==", "!=", "<=", ">="}
 OPERADORES_SIMPLES = set("+-*%<>=():,")
 DIGITOS = "0123456789"
 
+# Caracteres que se ven como otros válidos; suelen llegar al copiar
+# código desde una presentación, un PDF o una página web.
+ENGANOSOS = {
+    "\u00a0": "espacio no separable (¿copiado de una presentación o página web?)",
+    "\u200b": "espacio invisible de ancho cero",
+    "\u2013": "guion largo; use el signo menos '-'",
+    "\u2212": "signo menos tipográfico; use '-'",
+}
+
 
 @dataclass
 class Token:
@@ -68,7 +77,7 @@ def analizar(texto):
             c = linea[i]
             col = i + 1
 
-            if c == " ":
+            if c in " \t":                      # espacios y tabuladores entre tokens
                 i += 1
 
             elif c in DIGITOS:
@@ -95,6 +104,9 @@ def analizar(texto):
                 tokens.append(Token(c, c, n, col))
                 i += 1
 
+            elif c in ENGANOSOS:
+                raise ErrorLexico(f"línea {n}, columna {col}: {ENGANOSOS[c]}")
+
             else:
                 raise ErrorLexico(f"línea {n}, columna {col}: carácter inesperado {c!r}")
 
@@ -112,10 +124,12 @@ def analizar(texto):
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         sys.exit("Uso: python lexico.py programa.py")
-    with open(sys.argv[1], encoding="utf-8") as f:
-        fuente = f.read()
     try:
+        with open(sys.argv[1], encoding="utf-8") as f:
+            fuente = f.read()
         for tok in analizar(fuente):
             print(tok)
+    except FileNotFoundError:
+        sys.exit(f"No se encontró el archivo {sys.argv[1]}")
     except ErrorLexico as e:
         sys.exit(f"Error léxico: {e}")

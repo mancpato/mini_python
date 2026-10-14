@@ -257,12 +257,17 @@ def mostrar(nodo, nivel=0):
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         sys.exit("Uso: python sintactico.py programa.py")
-    with open(sys.argv[1], encoding="utf-8") as f:
-        fuente = f.read()
     try:
+        with open(sys.argv[1], encoding="utf-8") as f:
+            fuente = f.read()
         arbol = Parser(analizar(fuente)).programa()
         mostrar(arbol)
+    except FileNotFoundError:
+        sys.exit(f"No se encontró el archivo {sys.argv[1]}")
     except ErrorLexico as e:
         sys.exit(f"Error léxico: {e}")
     except ErrorSintactico as e:
         sys.exit(f"Error sintáctico: {e}")
+    except RecursionError:
+        # El parser descendente recursivo usa la pila de Python, que es finita
+        sys.exit("Error: el programa está demasiado anidado")
