@@ -1,0 +1,41 @@
+(* Gramática de MiniPy en EBNF, notación de Wirth:                  *)
+(*   "x"     terminal literal                                         *)
+(*   { x }   cero o más repeticiones de x                             *)
+(*   [ x ]   x es opcional                                            *)
+(*   a | b   a o b                                                    *)
+(* Este archivo es la referencia oficial del lenguaje: el analizador  *)
+(* sintáctico y el léxico deben seguirlo.                             *)
+
+
+(* ---------------------------- Sintaxis ---------------------------- *)
+
+programa    ::= "def" "main" "(" ")" ":" bloque "main" "(" ")" NEWLINE
+bloque      ::= NEWLINE INDENT sentencia { sentencia } DEDENT
+sentencia   ::= asignacion | si | para | imprimir
+
+asignacion  ::= ID "=" expr NEWLINE
+imprimir    ::= "print" "(" expr ")" NEWLINE
+si          ::= "if" condicion ":" bloque [ "else" ":" bloque ]
+para        ::= "for" ID "in" "range" "(" expr [ "," expr ] ")" ":" bloque
+
+condicion   ::= expr OPREL expr
+expr        ::= termino { ( "+" | "-" ) termino }
+termino     ::= factor { ( "*" | "//" | "%" ) factor }
+factor      ::= NUM | ID | "(" expr ")" | "-" factor
+
+
+(* ----------------------------- Léxico ----------------------------- *)
+
+ID              ::= ( letra | "_" ) { letra | digito | "_" }    (* excepto palabras reservadas *)
+NUM             ::= "0" { "0" } | digito_no_cero { digito }
+OPREL           ::= "==" | "!=" | "<" | "<=" | ">" | ">="
+
+letra           ::= "a" | ... | "z" | "A" | ... | "Z"           (* solo ASCII: sin acentos ni ñ *)
+digito          ::= "0" | digito_no_cero
+digito_no_cero  ::= "1" | ... | "9"
+
+(* Palabras reservadas: def main if else for in range print            *)
+(* NEWLINE, INDENT y DEDENT los genera el léxico a partir de los fines  *)
+(* de línea y de la sangría (una pila de niveles).                      *)
+(* Espacios y tabuladores separan tokens; la sangría solo usa espacios. *)
+(* Comentarios: desde "#" hasta el fin de línea; el léxico los descarta. *)

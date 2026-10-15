@@ -15,7 +15,7 @@ La que se presenta a continuación es muy reducida. Solo escribe código en la f
 La idea inicial era que todo programa aceptado corriera también en Python. Se descartó, porque garantizarlo exige mucho más que la gramática:
 
 - **Palabras reservadas de Python como identificadores** (léxico). El lenguaje solo reserva ocho palabras, así que acepta `while = 3` o `class = 1`, que Python rechaza. Se arreglaría reservando todas las de `keyword.kwlist`.
-- **Ceros a la izquierda** (léxico). `007` es inválido en Python 3. Por eso la definición de `NUM` los excluye (ver pendientes: el código aún no lo verifica). Python sí acepta `00` y `000` (solo ceros), que `NUM` también excluye; rechazar de más no hace que un programa aceptado falle en Python.
+- **Ceros a la izquierda** (léxico). `007` es inválido en Python 3, y `NUM` también lo excluye. Python sí acepta `00` y `000` (solo ceros), y `NUM` los acepta igual: `NUM ::= "0" { "0" } | digito_no_cero { digito }`. Aquí la gramática y Python coinciden, pero por una decisión explícita, no porque el lenguaje siga a Python.
 - **Variables usadas antes de asignarse** (semántico). `print(x)` es sintácticamente correcto pero falla en ejecución. No se puede resolver con una GLC; requiere tabla de símbolos.
 - **División entre cero** (ejecución). No se puede detectar en general antes de ejecutar.
 
@@ -23,34 +23,11 @@ La sintaxis se parece a Python y los programas típicamente corren en Python, pe
 
 ## Gramática (EBNF)
 
-```
-programa    ::= "def" "main" "(" ")" ":" bloque "main" "(" ")" NEWLINE
-bloque      ::= NEWLINE INDENT sentencia { sentencia } DEDENT
-sentencia   ::= asignacion | si | para | imprimir
+La gramática está en **[`gramatica.ebnf`](gramatica.ebnf)**, y solo ahí: sintaxis, tokens y palabras reservadas. Ese archivo es la referencia oficial del lenguaje, así que no se copia en este documento ni en el código.
 
-asignacion  ::= ID "=" expr NEWLINE
-imprimir    ::= "print" "(" expr ")" NEWLINE
-si          ::= "if" condicion ":" bloque [ "else" ":" bloque ]
-para        ::= "for" ID "in" "range" "(" expr [ "," expr ] ")" ":" bloque
+Son 11 reglas sintácticas y un puñado de tokens. `sintactico.py` tiene un método por regla, con su mismo nombre y con la regla como docstring; `pruebas.py` lee `gramatica.ebnf` y comprueba que cada docstring coincida con la regla correspondiente. Si alguien cambia la gramática y no el código (o al revés), las pruebas lo reportan diciendo qué regla no coincide. Es el mismo problema de toda documentación duplicada, resuelto con una prueba en lugar de con disciplina.
 
-condicion   ::= expr OPREL expr
-expr        ::= termino { ( "+" | "-" ) termino }
-termino     ::= factor { ( "*" | "//" | "%" ) factor }
-factor      ::= NUM | ID | "(" expr ")" | "-" factor
-```
-
-**Tokens (nivel léxico):**
-
-```
-ID      ::= ( letra | "_" ) { letra | digito | "_" }    (excepto palabras reservadas)
-NUM     ::= "0" | digito_no_cero { digito }
-OPREL   ::= "==" | "!=" | "<" | "<=" | ">" | ">="
-Reservadas: def main if else for in range print
-NEWLINE, INDENT, DEDENT  (los genera el analizador léxico)
-Comentarios: desde "#" hasta el fin de línea (el léxico los descarta)
-```
-
-Son 11 reglas sintácticas y un puñado de tokens.
+Los fragmentos de gramática que aparecen más adelante (`break`/`continue`, arreglos, listas) son **propuestas** para los proyectos de modificación, no parte de la definición.
 
 ## Programa de ejemplo válido
 
@@ -71,7 +48,7 @@ Imprime `25`.
 
 ## Decisiones de diseño que vale la pena comentar en clase
 
-**Sangría como tokens.** Es lo más interesante pedagógicamente. La gramática no menciona espacios: el analizador léxico lleva una pila de niveles de sangría y emite `INDENT` o `DEDENT` cuando cambia. Así la gramática queda libre de contexto y parece la de un lenguaje con llaves, donde `INDENT` equivale a `{` y `DEDENT` a `}`. De paso desaparece el problema del *else colgante*, porque la sangría deja claro a qué `if` pertenece cada `else`.
+**Sangría como tokens.** Es lo más interesante pedagógicamente (ver «Cómo explicar la sangría»). La gramática no menciona espacios: el analizador léxico lleva una pila de niveles de sangría y emite `INDENT` o `DEDENT` cuando cambia. Así la gramática queda libre de contexto y parece la de un lenguaje con llaves, donde `INDENT` equivale a `{` y `DEDENT` a `}`. De paso desaparece el problema del *else colgante*, porque la sangría deja claro a qué `if` pertenece cada `else`.
 
 **Condiciones solo relacionales.** Al exigir `expr OPREL expr` se evita introducir un tipo booleano, así que todo el lenguaje sigue siendo solo de enteros. Por eso no hay `and`, `or` ni `not`; si se quieren después, son una ampliación como ejercicio.
 
@@ -123,6 +100,13 @@ python interprete.py ejemplo.py   # ejecuta el programa
 python pruebas.py                 # pruebas de regresión
 ```
 
+Y dos herramientas que usan solo el léxico, para ver qué hace con la sangría:
+
+```
+python llaves.py ejemplo.py       # el programa con llaves en lugar de sangría
+python lex2tok.py ejemplo.py      # escribe ejemplo.tok, los tokens por línea
+```
+
 ### `lexico.py` (~165 líneas)
 
 Trabaja línea por línea en tres pasos:
@@ -133,15 +117,17 @@ Trabaja línea por línea en tres pasos:
 
 Quita los comentarios cortando cada línea en el primer `#`. Acepta tabuladores entre tokens (no en la sangría). Separa las líneas solo en `\n` y no con `splitlines()`, que también corta en el separador de línea Unicode (U+2028) y aceptaría en silencio un programa que Python rechaza. Por la misma razón, para reconocer una línea vacía quita solo espacios y tabuladores (`strip(" \t")`): `strip()` sin argumentos también quita espacios Unicode, y una línea con solo espacios no separables pasaría en silencio.
 
-Tiene una tabla de **caracteres engañosos** con mensajes específicos: espacio no separable, espacio de ancho cero, separador de línea Unicode, semirraya (–), raya (—), signo menos tipográfico y comillas tipográficas dobles y simples. Llegan al copiar código desde PowerPoint, PDF o páginas web (la autocorrección de PowerPoint produce rayas y comillas tipográficas), y se ven idénticos o casi idénticos a los válidos. Sirve como ejemplo en clase: el error es léxico porque el alfabeto no incluye ese carácter, aunque se vea igual que uno que sí.
+**Solo ASCII.** `letra` y `digito` son los de `gramatica.ebnf`, es decir `a`-`z`, `A`-`Z` y `0`-`9`, escritos uno por uno en dos constantes. No se usan `isalpha()` ni `isalnum()`, que aceptan todo Unicode y dejarían pasar `año`, `x²`, `x₁` y la ligadura `ﬁ` (U+FB01, un solo carácter que a veces sale al copiar de un PDF). Los cuatro producen ahora un error léxico que lo dice: "los identificadores solo admiten letras sin acento, dígitos y `_`". El caso de la ligadura es el más instructivo: antes, `ﬁn = 10` seguido de `print(fin)` daba "la variable 'fin' no tiene valor", mientras que Python imprime `10` porque normaliza los identificadores (forma NFKC); dos caracteres que se ven igual eran dos variables distintas. Por la misma definición, `NUM` rechaza `007` ("un número no puede empezar con cero") y acepta `00`.
+
+Tiene una tabla de **caracteres engañosos** con mensajes específicos: espacio no separable, espacio de ancho cero, separador de línea Unicode, semirraya (–), raya (—), signo menos tipográfico y comillas tipográficas dobles y simples. Llegan al copiar código desde PowerPoint, PDF o páginas web (la autocorrección de PowerPoint produce rayas y comillas tipográficas), y se ven idénticos o casi idénticos a los válidos. Sirve como ejemplo en clase: el error es léxico porque el alfabeto no incluye ese carácter, aunque se vea igual que uno que sí. La tabla se consulta **antes** de la comprobación de ASCII, para que un carácter engañoso que además sea alfanumérico (por ejemplo la `а` cirílica, U+0430) reciba su mensaje preciso y no el genérico.
 
 ### `sintactico.py` (~290 líneas)
 
-Analizador descendente recursivo con la gramática en el encabezado y una función por regla con el mismo nombre, para leerlas lado a lado. Todo descansa en dos utilidades: `ver()` mira el token actual sin consumirlo y `consumir()` lo exige o lanza el error. Construye un AST con `dataclasses` y lo imprime con sangría.
+Analizador descendente recursivo con un método por regla, con el mismo nombre que la regla y con la regla de `gramatica.ebnf` como docstring, para leerlas lado a lado sin que el archivo repita la gramática completa. Todo descansa en dos utilidades: `ver()` mira el token actual sin consumirlo y `consumir()` lo exige o lanza el error. Construye un AST con `dataclasses` y lo imprime con sangría.
 
 Decisiones del código:
 - `range(n)` se normaliza a `range(0, n)` en el árbol.
-- La llamada final `main()` es **opcional** en el código (ver pendientes).
+- La llamada final `main()` es **obligatoria**, como en la gramática: un programa que termina después del bloque da "se esperaba MAIN, se encontró EOF".
 - El árbol se imprime solo cuando se terminó de armar: si la recursión se agota a la mitad, sale únicamente el mensaje de error.
 
 ### `interprete.py` (~120 líneas con comentarios)
@@ -163,11 +149,13 @@ Un matiz: la completitud de Turing con `while` depende de que los enteros no ten
 
 **Limitación.** Los errores de ejecución no reportan línea, porque el AST no guarda posiciones.
 
-### `pruebas.py` (~215 líneas)
+### `pruebas.py` (~260 líneas)
 
-Corre los casos de `CASOS` con `interprete.py` y los de `CASOS_ARBOL` con `sintactico.py`, y compara la salida o el mensaje de error con el esperado. En los programas válidos de `CASOS` también corre Python, para confirmar que dan el mismo resultado. Incluye los ejemplos de este documento, casos que comprueban los puntos de «Semántica de MiniPy» que en C o Java darían otro resultado (redondeo de `//` y `%`, límites del `for`, orden de evaluación) y casos que en versiones anteriores producían un traceback. Los dos pendientes (`main()` final y ceros a la izquierda) tienen su caso con el comportamiento actual y una nota de qué esperar si se deciden.
+Corre los casos de `CASOS` con `interprete.py` y los de `CASOS_ARBOL` con `sintactico.py`, y compara la salida o el mensaje de error con el esperado. En los programas válidos de `CASOS` también corre Python, para confirmar que dan el mismo resultado. Incluye los ejemplos de este documento, casos que comprueban los puntos de «Semántica de MiniPy» que en C o Java darían otro resultado (redondeo de `//` y `%`, límites del `for`, orden de evaluación) y casos que en versiones anteriores producían un traceback. También los tres puntos que estuvieron pendientes: `main()` final ausente, `007`, y los identificadores con `ñ`, con `²` y con la ligadura `ﬁ`, más `00` para comprobar que `NUM` sí lo acepta.
 
-`CASOS_ARBOL` comprueba lo que solo se ve en el árbol: la asociatividad izquierda de `1 - 2 - 3` (útil junto a la derivación a mano), un literal de 5000 dígitos y la suma plana que agota la recursión al imprimir el árbol, aunque el parser la lea sin problema.
+Un caso no corre ningún programa: lee `gramatica.ebnf`, quita los comentarios `(* ... *)` y los espacios de alineación, y compara cada regla con el docstring del método de `Parser` que se llama igual. Si no coinciden, dice qué regla y qué dice cada lado; también avisa si la gramática gana una regla que nadie implementó. Es la prueba que sostiene la decisión de tener la gramática en un solo archivo.
+
+`CASOS_TOK` comprueba el archivo que genera `lex2tok.py`, incluido que un error léxico sobrescriba el `.tok` que dejó el caso anterior. `CASOS_ARBOL` comprueba lo que solo se ve en el árbol: la asociatividad izquierda de `1 - 2 - 3` (útil junto a la derivación a mano), un literal de 5000 dígitos y la suma plana que agota la recursión al imprimir el árbol, aunque el parser la lea sin problema.
 
 Además de comparar con lo esperado, toda salida que contenga un traceback de Python cuenta como falla, aunque el caso no lo haya previsto: la especificación exige que toda excepción se traduzca a un error del lenguaje. Así, el equipo que agregue potencia y escriba un caso con `0 ** -1` se entera de que olvidó atrapar el `ZeroDivisionError`.
 
@@ -176,6 +164,68 @@ Cada caso tiene un límite de 10 segundos. Con el lenguaje base sobra, pero cuan
 Las pruebas que dependen del límite de recursión usan 5000 términos y no 1000: con 1000 ya fallan, pero por un margen de solo tres llamadas, que puede cambiar entre versiones de Python.
 
 Cada equipo puede agregar sus casos al final de la lista que corresponda, y sirve como base para las pruebas cruzadas.
+
+### `llaves.py` (~80 líneas)
+
+Traduce un programa a una versión con llaves: cada `INDENT` se escribe como `{` y cada `DEDENT` como `}`. Muestra que, después del léxico, la estructura viaja en esos dos tokens, como en un lenguaje con llaves. Como no usa el sintáctico, también traduce programas con errores sintácticos. Tres modos: con sangría según la profundidad (como en C), `--plano` (sin sangría: al parser ya no le importan los espacios) y `--una-linea` (la secuencia de tokens tal como la recibe el parser, con cada `NEWLINE` como `;`).
+
+### `lex2tok.py` (~80 líneas)
+
+De `programa.py` genera `programa.tok`, el archivo intermedio con los tokens. Usa un formato compacto, un renglón por cada línea del programa que produjo tokens, para compararlo lado a lado con el original:
+
+```
+# Tokens de ejemplo.py, generado por lex2tok.py
+  1  DEF MAIN ( ) : NEWLINE
+  2  INDENT ID:suma = NUM:0 NEWLINE
+  3  FOR ID:i IN RANGE ( NUM:1 , NUM:11 ) : NEWLINE
+  4  INDENT IF ID:i % NUM:2 == NUM:0 : NEWLINE
+  5  INDENT ID:suma = ID:suma + ID:i NEWLINE
+  6  DEDENT ELSE : NEWLINE
+  7  INDENT ID:suma = ID:suma - NUM:1 NEWLINE
+  8  DEDENT DEDENT PRINT ( ID:suma ) NEWLINE
+ 10  DEDENT MAIN ( ) NEWLINE
+ 11  EOF
+```
+
+Las palabras reservadas aparecen con su tipo, los operadores como ellos mismos, y los identificadores y números con su valor. Se ve que la línea 9 (vacía) no produjo nada, que los `DEDENT` aparecen al inicio de la línea que regresa y que la línea 8 cierra dos niveles. Decisiones:
+- Si hay error léxico, el `.tok` se sobrescribe con el mensaje, para que nunca quede un `.tok` viejo que no corresponda al programa actual.
+- Se escribe siempre en UTF-8. Redirigir con `python lexico.py ejemplo.py > ejemplo.tok` no es equivalente: en Windows PowerShell 5, `>` produce UTF-16.
+- El formato no es reversible (pierde las columnas). El sintáctico no lo lee; solo sirve para ver el intermedio. Que lo leyera sería un proyecto posible: los primeros compiladores trabajaban en varias pasadas comunicadas por archivos intermedios, porque no tenían memoria para tener todo el programa a la vez.
+
+### Cómo explicar la sangría
+
+Secuencia de clase, de lo conocido a lo formal:
+
+1. **Empezar por las llaves.** Un programa en C con la sangría desordenada a propósito compila igual, porque lo que marca el fin de un bloque son las llaves. En MiniPy no hay llaves: la sangría cumple su papel.
+2. **El léxico pone las llaves.** `llaves.py ejemplo.py` lo muestra como C; `--plano` quita la sangría y deja solo las llaves. Después del léxico los espacios ya no importan: el parser nunca ve un espacio.
+3. **Simular la pila a mano.** Con este programa:
+
+   ```python
+   def main():
+       for i in range(3):
+           if i > 0:
+               print(i)
+       print(9)
+   ```
+
+   | Línea | Espacios | Pila antes | Emite | Pila después |
+   |---|---|---|---|---|
+   | 1 | 0 | [0] | — | [0] |
+   | 2 | 4 | [0] | INDENT | [0, 4] |
+   | 3 | 8 | [0, 4] | INDENT | [0, 4, 8] |
+   | 4 | 12 | [0, 4, 8] | INDENT | [0, 4, 8, 12] |
+   | 5 | 4 | [0, 4, 8, 12] | DEDENT DEDENT | [0, 4] |
+   | fin | — | [0, 4] | DEDENT | [0] |
+
+   Comparar con `lex2tok.py`. La fila 5 enseña la asimetría que más confunde: avanzar abre exactamente un nivel, regresar puede cerrar varios. Luego, con 6 espacios en la línea 5, la pila llega a [0, 4] y 6 no coincide: el léxico no sabe cuántas llaves cerrar, y por eso es error léxico y `llaves.py` no produce salida.
+4. **Contrastar los dos errores.** Con sangría de más, `llaves.py` sí traduce, y aparece una `{` sin `for` ni `if` que la justifique: el léxico no objeta (abrir un nivel siempre es posible) y el parser la rechaza. La diferencia entre error léxico y sintáctico se ve en lugar de memorizarse.
+5. **La secuencia de tokens.** `--una-linea` muestra lo que recibe el parser. Aparece `:;` antes de cada `{` porque hay un `NEWLINE` entre los dos puntos y el `INDENT`: es la regla `bloque ::= NEWLINE INDENT ...` hecha visible.
+6. **Por qué la sangría no está en la gramática.** Porque no se puede: el conjunto de programas bien sangrados, visto carácter por carácter, no es libre de contexto. Al intersectarlo con el lenguaje regular de programas de tres sentencias seguidas, con cualquier cantidad de espacios cada una, solo quedan los que tienen la misma cantidad en las tres, de la forma `aⁿ x aⁿ x aⁿ x`, que no es libre de contexto (lema de bombeo, como `aⁿbⁿcⁿ`). Como los lenguajes libres de contexto son cerrados bajo intersección con regulares, el original tampoco lo es. El léxico resuelve la parte no libre de contexto con una pila de números y entrega al parser una secuencia que sí lo es. Consecuencia: el léxico de Python no es un autómata finito, aunque en los libros los analizadores léxicos suelan serlo.
+
+Confusiones que conviene anticipar:
+- Que hay un `DEDENT` por línea: la fila 5 lo desmiente.
+- Que la sangría debe ser de 4 espacios: solo importan las comparaciones. Bloques de 2 espacios funcionan, y también uno que avanza 4 y otro que avanza 3; la salida de `llaves.py` es idéntica.
+- Que las líneas vacías o los comentarios afectan la sangría: no producen tokens, y en `llaves.py` y `lex2tok.py` simplemente no aparecen.
 
 ### Manejo de errores común
 
@@ -414,7 +464,7 @@ La columna **Intérprete** indica si la mejora obliga a modificar `interprete.py
 
 El intérprete solo cambia cuando la mejora agrega un **significado nuevo**. Si lo nuevo puede expresarse con los nodos que ya existen en el AST, el parser hace la traducción y el intérprete no se entera. Eso es azúcar sintáctica.
 
-- **No lo tocan:** comentarios multilínea, paréntesis en varias líneas, bloques en una línea, recuperación de errores. Los números en otras bases o con separadores (`0x1F`, `1_000`) producen el mismo `Num`; basta `int(valor, 0)` en el parser, aunque `int("007", 0)` lanza `ValueError`: antes hay que resolver el pendiente de los ceros a la izquierda. Graphviz o un formateador son módulos nuevos que leen el AST.
+- **No lo tocan:** comentarios multilínea, paréntesis en varias líneas, bloques en una línea, recuperación de errores. Los números en otras bases o con separadores (`0x1F`, `1_000`) producen el mismo `Num`; basta `int(valor, 0)` en el parser, aunque `int("007", 0)` lanza `ValueError`: hay que respetar la regla de `NUM`, que ya rechaza los ceros a la izquierda en el léxico. Graphviz o un formateador son módulos nuevos que leen el AST.
 - **Depende del diseño:** `x += 1` puede traducirse a `Asignacion("x", BinOp("+", Var("x"), Num(1)))`; `elif` a un `Si` anidado en el `sino`. Si el equipo crea nodos nuevos, debe modificar el intérprete. Ambas opciones son válidas; preguntar cuál eligió y por qué es buena pregunta de exposición.
 - **Sí lo tocan:** todo lo que agrega comportamiento. Algunos casos engañosos:
   - Potencia y flotantes son casi gratis porque Python ya sabe hacerlo: otra vez semántica heredada, con todo y sus excepciones (ver la tabla de proyectos).
@@ -614,14 +664,16 @@ Si solo se eligen dos: pruebas cruzadas (calidad del trabajo) y preguntas al aza
 ## Repositorio
 
 - **No dejar el repositorio en Google Drive.** Drive sincroniza los archivos internos de `.git` mientras Git los modifica, y puede corromperlo o crear copias en conflicto (`ejemplo (1).py`). También genera los `desktop.ini`. Mejor una carpeta local y GitHub/GitLab como respaldo y para clonarlo en Linux.
-- **`.gitignore`** en la raíz del proyecto (no confundir con el que virtualenv crea dentro de `.venv`, que debe contener solo `*`): `__pycache__/`, `*.pyc`, `.venv/`, `.idea/`, `*.pptx`, `~$*` (archivos de bloqueo de Office), `desktop.ini`, `Thumbs.db`.
+- **`.gitignore`** en la raíz del proyecto (no confundir con el que virtualenv crea dentro de `.venv`, que debe contener solo `*`): `__pycache__/`, `*.pyc`, `.venv/`, `.idea/`, `*.pptx`, `~$*` (archivos de bloqueo de Office), `*.tok` (generados por `lex2tok.py`), `desktop.ini`, `Thumbs.db`.
 - **`.gitattributes`** con `* text=auto eol=lf` para que los fines de línea de Windows no llenen los diffs de cambios falsos.
 - **Mayúsculas en nombres de archivo:** Windows no las distingue y Linux sí, aunque no donde uno esperaría. Los `import` de Python las distinguen también en Windows (PEP 235): si el archivo se llama `Lexico.py`, `from lexico import` falla en los dos sistemas. Los problemas reales son otros dos. `python interprete.py Ejemplo.py` encuentra `ejemplo.py` en Windows y no en Linux, porque `open()` sí depende del sistema de archivos. Y Git en Windows no registra un renombrado que solo cambia mayúsculas: si un alumno renombra `lexico.py` a `Lexico.py` desde el explorador y ajusta sus `import`, en Windows todo funciona, pero el repositorio conserva `lexico.py` y el clon en Linux falla. Para renombrar así hay que usar `git mv lexico.py Lexico.py`.
 - Verificar con `git ls-files` (qué se versiona) y `git status --ignored`. Si algo ya versionado debió ignorarse: `git rm -r --cached carpeta`.
 - No hay dependencias externas; en Linux basta `python3 interprete.py ejemplo.py`.
 
-## Pendientes
+## Decisiones que estuvieron pendientes
 
-- **`main()` final:** la gramática lo exige, pero `sintactico.py` lo acepta como opcional. Decidir y alinear. (Ya que es un lenguaje separado, podría eliminarse de la gramática.)
-- **Ceros a la izquierda:** la gramática excluye `007`, pero `lexico.py` lo acepta. Agregar la verificación o relajar la definición de `NUM`.
-- **Definición de `letra`:** el léxico usa `isalpha()` para el primer carácter e `isalnum()` para los demás, que aceptan letras acentuadas (`año`) y otros caracteres Unicode. Consecuencias: acepta `x²` y `x₁`, que Python rechaza, y trata la ligadura `ﬁ` (un solo carácter, U+FB01, que a veces sale al copiar de un PDF) como distinta de `fi`. Así, `ﬁn = 10` seguido de `print(fin)` da "la variable 'fin' no tiene valor", mientras que Python imprime 10 porque normaliza los identificadores (forma NFKC). Decidir si `letra` y `digito` son solo ASCII, lo que convierte los tres casos en un error léxico claro.
+Los tres eran desacuerdos entre la gramática y el código. Se resolvieron a favor de la gramática, se movió la gramática a `gramatica.ebnf` y se agregó la prueba que compara las reglas con los docstrings del parser, para que no vuelva a haber dos versiones.
+
+- **`main()` final: obligatorio.** La gramática lo exigía y `sintactico.py` lo aceptaba como opcional. Se alineó el código. Se consideró quitarlo de la gramática, ya que es un lenguaje separado, pero conservarlo mantiene los programas ejecutables en Python y da un ejemplo claro de error al final del archivo.
+- **Ceros a la izquierda: rechazados.** `NUM ::= "0" { "0" } | digito_no_cero { digito }`, así que `007` es error léxico y `00` es válido, igual que en Python 3. El léxico lo verifica sobre el lexema completo, después de leer las cifras.
+- **`letra` y `digito`: solo ASCII.** El léxico usaba `isalpha()` e `isalnum()`, que aceptan todo Unicode. Ahora compara contra dos constantes con los caracteres escritos uno por uno, y `año`, `x²`, `x₁` y `ﬁn` dan un error léxico que explica el problema en lugar de producir un identificador que Python entendería de otra manera. Es un buen ejemplo de que el alfabeto es parte de la definición del lenguaje: la pregunta "¿qué es una letra?" no tiene una respuesta obvia, y `isalpha()` contestaba una que nadie había elegido.

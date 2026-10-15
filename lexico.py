@@ -4,6 +4,11 @@ Analizador léxico para MiniPy (subconjunto mínimo de Python).
 Entrada: el texto del programa.
 Salida:  una lista de tokens, terminada en EOF.
 
+La definición de los tokens (ID, NUM, OPREL, letra, digito, las palabras
+reservadas y los comentarios) está en gramatica.ebnf, la referencia oficial
+del lenguaje; aquí no se repite. Solo ASCII: un identificador no admite
+letras acentuadas ni la ñ, y NUM no admite ceros a la izquierda.
+
 La sangría no se pasa como espacios al analizador sintáctico: se convierte
 en tokens INDENT y DEDENT usando una pila de niveles. Así la gramática
 puede tratarlos como si fueran llaves de apertura y cierre.
@@ -17,7 +22,14 @@ from dataclasses import dataclass
 RESERVADAS = {"def", "main", "if", "else", "for", "in", "range", "print"}
 OPERADORES_DOBLES = {"//", "==", "!=", "<=", ">="}
 OPERADORES_SIMPLES = set("+-*%<>=():,")
+
+# El alfabeto es solo ASCII, como dice gramatica.ebnf. Se escriben los
+# caracteres uno por uno y no se usan isalpha() ni isalnum(), que aceptan
+# todo Unicode: letras acentuadas, la ñ, la ligadura ﬁ (U+FB01) y dígitos
+# como ² o ₁.
+LETRAS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 DIGITOS = "0123456789"
+ALFANUMERICOS = LETRAS + DIGITOS + "_"
 
 # Caracteres que se ven como otros válidos; suelen llegar al copiar
 # código desde una presentación, un PDF o una página web.
@@ -116,12 +128,19 @@ def analizar(texto):
                 j = i
                 while j < len(linea) and linea[j] in DIGITOS:
                     j += 1
-                tokens.append(Token("NUM", linea[i:j], n, col))
+                lexema = linea[i:j]
+                # NUM admite "0", "00", "000"..., pero no un cero a la
+                # izquierda seguido de otra cifra: 007 no es un número
+                if lexema[0] == "0" and lexema.strip("0") != "":
+                    raise ErrorLexico(
+                        f"línea {n}, columna {col}: un número no puede "
+                        f"empezar con cero: {lexema!r}")
+                tokens.append(Token("NUM", lexema, n, col))
                 i = j
 
-            elif c.isalpha() or c == "_":
+            elif c in LETRAS or c == "_":
                 j = i
-                while j < len(linea) and (linea[j].isalnum() or linea[j] == "_"):
+                while j < len(linea) and linea[j] in ALFANUMERICOS:
                     j += 1
                 lexema = linea[i:j]
                 tipo = lexema.upper() if lexema in RESERVADAS else "ID"
@@ -137,7 +156,18 @@ def analizar(texto):
                 i += 1
 
             elif c in ENGANOSOS:
+                # Va antes de la rama siguiente: un carácter engañoso puede
+                # ser alfanumérico (por ejemplo la 'а' cirílica, U+0430) y su
+                # mensaje es más preciso que el de aquí abajo.
                 raise ErrorLexico(f"línea {n}, columna {col}: {ENGANOSOS[c]}")
+
+            elif c.isalnum():
+                # Alfanumérico para Unicode, pero no para el alfabeto del
+                # lenguaje: á, ñ, ², ₁, la ligadura ﬁ...
+                raise ErrorLexico(
+                    f"línea {n}, columna {col}: carácter inesperado {c!r}: "
+                    "los identificadores solo admiten letras sin acento, "
+                    "dígitos y '_'")
 
             else:
                 raise ErrorLexico(f"línea {n}, columna {col}: carácter inesperado {c!r}")

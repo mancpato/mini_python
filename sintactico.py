@@ -2,19 +2,12 @@
 Analizador sintáctico descendente recursivo para MiniPy.
 
 Recibe la lista de tokens del analizador léxico y construye un árbol de
-sintaxis abstracta (AST). Hay una función por cada regla de la gramática:
+sintaxis abstracta (AST).
 
-  programa   ::= "def" "main" "(" ")" ":" bloque [ "main" "(" ")" NEWLINE ]
-  bloque     ::= NEWLINE INDENT sentencia { sentencia } DEDENT
-  sentencia  ::= asignacion | si | para | imprimir
-  asignacion ::= ID "=" expr NEWLINE
-  imprimir   ::= "print" "(" expr ")" NEWLINE
-  si         ::= "if" condicion ":" bloque [ "else" ":" bloque ]
-  para       ::= "for" ID "in" "range" "(" expr [ "," expr ] ")" ":" bloque
-  condicion  ::= expr OPREL expr
-  expr       ::= termino { ( "+" | "-" ) termino }
-  termino    ::= factor { ( "*" | "//" | "%" ) factor }
-  factor     ::= NUM | ID | "(" expr ")" | "-" factor
+La gramática no se repite aquí: está en gramatica.ebnf, la referencia
+oficial del lenguaje. Hay un método de Parser por cada regla sintáctica,
+con su mismo nombre y con la regla como docstring; pruebas.py comprueba
+que esos docstrings coincidan con el archivo.
 
 Uso: python sintactico.py programa.py
 """
@@ -119,16 +112,17 @@ class Parser:
 
     # --- una función por regla ---
     def programa(self):
+        """programa ::= "def" "main" "(" ")" ":" bloque "main" "(" ")" NEWLINE"""
         for t in ("DEF", "MAIN", "(", ")", ":"):
             self.consumir(t)
         cuerpo = self.bloque()
-        if self.ver("MAIN"):                  # llamada final opcional: main()
-            for t in ("MAIN", "(", ")", "NEWLINE"):
-                self.consumir(t)
+        for t in ("MAIN", "(", ")", "NEWLINE"):   # la llamada final es obligatoria
+            self.consumir(t)
         self.consumir("EOF")
         return Programa(cuerpo)
 
     def bloque(self):
+        """bloque ::= NEWLINE INDENT sentencia { sentencia } DEDENT"""
         self.consumir("NEWLINE")
         self.consumir("INDENT")
         sentencias = [self.sentencia()]
@@ -138,6 +132,7 @@ class Parser:
         return sentencias
 
     def sentencia(self):
+        """sentencia ::= asignacion | si | para | imprimir"""
         # Cada alternativa empieza con un token distinto: basta mirar uno (LL(1))
         if self.ver("ID"):
             return self.asignacion()
@@ -150,6 +145,7 @@ class Parser:
         self.error("una sentencia")
 
     def asignacion(self):
+        """asignacion ::= ID "=" expr NEWLINE"""
         nombre = self.consumir("ID").valor
         self.consumir("=")
         valor = self.expr()
@@ -157,6 +153,7 @@ class Parser:
         return Asignacion(nombre, valor)
 
     def imprimir(self):
+        """imprimir ::= "print" "(" expr ")" NEWLINE"""
         self.consumir("PRINT")
         self.consumir("(")
         valor = self.expr()
@@ -165,6 +162,7 @@ class Parser:
         return Imprimir(valor)
 
     def si(self):
+        """si ::= "if" condicion ":" bloque [ "else" ":" bloque ]"""
         self.consumir("IF")
         cond = self.condicion()
         self.consumir(":")
@@ -177,6 +175,7 @@ class Parser:
         return Si(cond, entonces, sino)
 
     def para(self):
+        """para ::= "for" ID "in" "range" "(" expr [ "," expr ] ")" ":" bloque"""
         self.consumir("FOR")
         var = self.consumir("ID").valor
         self.consumir("IN")
@@ -194,6 +193,7 @@ class Parser:
         return Para(var, inicio, fin, cuerpo)
 
     def condicion(self):
+        """condicion ::= expr OPREL expr"""
         izq = self.expr()
         if not self.ver(*OPREL):
             self.error("un operador relacional")
@@ -203,6 +203,7 @@ class Parser:
         return Condicion(op, izq, der)
 
     def expr(self):
+        """expr ::= termino { ( "+" | "-" ) termino }"""
         nodo = self.termino()
         while self.ver("+", "-"):             # el ciclo da asociatividad izquierda
             op = self.actual().tipo
@@ -211,6 +212,7 @@ class Parser:
         return nodo
 
     def termino(self):
+        """termino ::= factor { ( "*" | "//" | "%" ) factor }"""
         nodo = self.factor()
         while self.ver("*", "//", "%"):
             op = self.actual().tipo
@@ -219,6 +221,7 @@ class Parser:
         return nodo
 
     def factor(self):
+        """factor ::= NUM | ID | "(" expr ")" | "-" factor"""
         if self.ver("NUM"):
             return Num(int(self.consumir("NUM").valor))
         if self.ver("ID"):
