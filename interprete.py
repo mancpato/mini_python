@@ -10,7 +10,7 @@ Uso: python interprete.py programa.py
 """
 
 import sys
-from lexico import analizar, ErrorLexico
+from lexico import analizar, leer, ErrorLexico
 from sintactico import (Parser, ErrorSintactico, Asignacion, Imprimir, Si, Para,
                         BinOp, Condicion, Negativo, Num, Var)
 
@@ -86,16 +86,16 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         sys.exit("Uso: python interprete.py programa.py")
 
-    # Desde Python 3.11, convertir a texto un entero de más de 4300 dígitos
-    # lanza ValueError. Los enteros del lenguaje no tienen límite, así que se
-    # quita también el de impresión. (Otro ejemplo de semántica heredada.)
+    # Desde 2022 (Python 3.11, y las correcciones de seguridad 3.10.7, 3.9.14,
+    # 3.8.14 y 3.7.14), convertir entre texto y entero con más de 4300 dígitos
+    # lanza ValueError: al leer literales y al imprimir. Los enteros del
+    # lenguaje no tienen límite, así que se quita. (Otro ejemplo de semántica
+    # heredada.)
     if hasattr(sys, "set_int_max_str_digits"):
         sys.set_int_max_str_digits(0)
 
     try:
-        with open(sys.argv[1], encoding="utf-8") as f:
-            fuente = f.read()
-        arbol = Parser(analizar(fuente)).programa()
+        arbol = Parser(analizar(leer(sys.argv[1]))).programa()
         ejecutar(arbol.cuerpo, {})
     except FileNotFoundError:
         sys.exit(f"No se encontró el archivo {sys.argv[1]}")
@@ -106,5 +106,12 @@ if __name__ == "__main__":
     except ErrorEjecucion as e:
         sys.exit(f"Error de ejecución: {e}")
     except RecursionError:
-        # El parser y el intérprete son recursivos y usan la pila de Python
-        sys.exit("Error: el programa está demasiado anidado")
+        # El parser y el intérprete son recursivos y usan la pila de Python.
+        # La profundidad del árbol no es la del texto: una suma de 1000
+        # términos sin paréntesis da un árbol de profundidad 999.
+        sys.exit("Error: el árbol del programa es demasiado profundo "
+                 "(mucho anidamiento o una expresión muy larga)")
+    except KeyboardInterrupt:
+        # Todo programa del lenguaje base termina, pero puede tardar muchísimo;
+        # con while aparecen los ciclos infinitos. Ctrl+C sin traceback.
+        sys.exit("Ejecución interrumpida")

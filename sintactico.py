@@ -19,9 +19,11 @@ sintaxis abstracta (AST). Hay una función por cada regla de la gramática:
 Uso: python sintactico.py programa.py
 """
 
+import io
 import sys
+from contextlib import redirect_stdout
 from dataclasses import dataclass, fields
-from lexico import analizar, ErrorLexico
+from lexico import analizar, leer, ErrorLexico
 
 OPREL = {"==", "!=", "<", "<=", ">", ">="}
 
@@ -257,11 +259,22 @@ def mostrar(nodo, nivel=0):
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         sys.exit("Uso: python sintactico.py programa.py")
+
+    # Desde 2022 (Python 3.11, y las correcciones de seguridad 3.10.7, 3.9.14,
+    # 3.8.14 y 3.7.14), convertir entre texto y entero con más de 4300 dígitos
+    # lanza ValueError. Aquí afecta a int() en factor() y a la impresión del
+    # árbol. Los enteros del lenguaje no tienen límite, así que se quita.
+    if hasattr(sys, "set_int_max_str_digits"):
+        sys.set_int_max_str_digits(0)
+
     try:
-        with open(sys.argv[1], encoding="utf-8") as f:
-            fuente = f.read()
-        arbol = Parser(analizar(fuente)).programa()
-        mostrar(arbol)
+        arbol = Parser(analizar(leer(sys.argv[1]))).programa()
+        # El árbol se arma en memoria y se imprime al final: si la recursión
+        # se agota a la mitad, sale solo el mensaje de error.
+        texto = io.StringIO()
+        with redirect_stdout(texto):
+            mostrar(arbol)
+        print(texto.getvalue(), end="")
     except FileNotFoundError:
         sys.exit(f"No se encontró el archivo {sys.argv[1]}")
     except ErrorLexico as e:
@@ -269,5 +282,9 @@ if __name__ == "__main__":
     except ErrorSintactico as e:
         sys.exit(f"Error sintáctico: {e}")
     except RecursionError:
-        # El parser descendente recursivo usa la pila de Python, que es finita
-        sys.exit("Error: el programa está demasiado anidado")
+        # El parser y mostrar() son recursivos y usan la pila de Python, que es
+        # finita. La profundidad del árbol no es la del texto: una suma de 1000
+        # términos sin paréntesis da un árbol de profundidad 999, por la
+        # asociatividad izquierda.
+        sys.exit("Error: el árbol del programa es demasiado profundo "
+                 "(mucho anidamiento o una expresión muy larga)")

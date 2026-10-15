@@ -24,8 +24,14 @@ DIGITOS = "0123456789"
 ENGANOSOS = {
     "\u00a0": "espacio no separable (¿copiado de una presentación o página web?)",
     "\u200b": "espacio invisible de ancho cero",
-    "\u2013": "guion largo; use el signo menos '-'",
+    "\u2028": "separador de línea Unicode, invisible (¿copiado de una página web?)",
+    "\u2013": "semirraya '–'; use el signo menos '-'",
+    "\u2014": "raya '—'; use el signo menos '-'",
     "\u2212": "signo menos tipográfico; use '-'",
+    "\u201c": "comilla tipográfica; además, el lenguaje no tiene cadenas",
+    "\u201d": "comilla tipográfica; además, el lenguaje no tiene cadenas",
+    "\u2018": "comilla tipográfica; además, el lenguaje no tiene cadenas",
+    "\u2019": "comilla tipográfica; además, el lenguaje no tiene cadenas",
 }
 
 
@@ -44,14 +50,40 @@ class ErrorLexico(Exception):
     pass
 
 
+def leer(ruta):
+    """Lee el programa como UTF-8, aceptando el BOM que agregan algunos
+    editores de Windows. Un byte que no es UTF-8 no pertenece al alfabeto,
+    así que se reporta como error léxico, con la línea donde aparece."""
+    with open(ruta, "rb") as f:
+        datos = f.read()
+    try:
+        return datos.decode("utf-8-sig")
+    except UnicodeDecodeError as e:
+        linea = datos[:e.start].count(b"\n") + 1
+        raise ErrorLexico(f"línea {linea}: el archivo no está en UTF-8 "
+                          "(guárdelo como UTF-8 desde el editor)")
+
+
 def analizar(texto):
     tokens = []
     pila = [0]  # niveles de sangría abiertos; el 0 nunca se saca
 
-    for n, linea in enumerate(texto.splitlines(), start=1):
+    # Se separa solo en "\n". splitlines() también corta en caracteres como
+    # el separador de línea Unicode (U+2028), y aceptaría en silencio un
+    # programa que Python rechaza. open() ya convierte "\r\n" en "\n", pero
+    # analizar() puede recibir texto de otra fuente.
+    texto = texto.replace("\r\n", "\n").replace("\r", "\n")
+    lineas = texto.split("\n")
+    if lineas[-1] == "":        # el "\n" final no abre una línea nueva
+        lineas.pop()
+
+    for n, linea in enumerate(lineas, start=1):
         linea = linea.split("#", 1)[0]          # quitar comentario
-        if linea.strip() == "":
-            continue                             # líneas vacías no cuentan
+        # Líneas vacías no cuentan. Solo se quitan espacios y tabuladores:
+        # strip() sin argumentos también quitaría espacios Unicode (U+00A0,
+        # U+2028) y una línea con solo esos caracteres pasaría en silencio.
+        if linea.strip(" \t") == "":
+            continue
 
         # --- 1. Sangría: contar espacios al inicio ---
         sangria = 0
@@ -113,7 +145,7 @@ def analizar(texto):
         tokens.append(Token("NEWLINE", "\n", n, len(linea) + 1))
 
     # --- 3. Fin de archivo: cerrar los bloques que sigan abiertos ---
-    ultima = len(texto.splitlines()) + 1
+    ultima = len(lineas) + 1
     while pila[-1] > 0:
         pila.pop()
         tokens.append(Token("DEDENT", "", ultima, 1))
@@ -125,9 +157,7 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         sys.exit("Uso: python lexico.py programa.py")
     try:
-        with open(sys.argv[1], encoding="utf-8") as f:
-            fuente = f.read()
-        for tok in analizar(fuente):
+        for tok in analizar(leer(sys.argv[1])):
             print(tok)
     except FileNotFoundError:
         sys.exit(f"No se encontró el archivo {sys.argv[1]}")
