@@ -677,3 +677,20 @@ Los tres eran desacuerdos entre la gramática y el código. Se resolvieron a fav
 - **`main()` final: obligatorio.** La gramática lo exigía y `sintactico.py` lo aceptaba como opcional. Se alineó el código. Se consideró quitarlo de la gramática, ya que es un lenguaje separado, pero conservarlo mantiene los programas ejecutables en Python y da un ejemplo claro de error al final del archivo.
 - **Ceros a la izquierda: rechazados.** `NUM ::= "0" { "0" } | digito_no_cero { digito }`, así que `007` es error léxico y `00` es válido, igual que en Python 3. El léxico lo verifica sobre el lexema completo, después de leer las cifras.
 - **`letra` y `digito`: solo ASCII.** El léxico usaba `isalpha()` e `isalnum()`, que aceptan todo Unicode. Ahora compara contra dos constantes con los caracteres escritos uno por uno, y `año`, `x²`, `x₁` y `ﬁn` dan un error léxico que explica el problema en lugar de producir un identificador que Python entendería de otra manera. Es un buen ejemplo de que el alfabeto es parte de la definición del lenguaje: la pregunta "¿qué es una letra?" no tiene una respuesta obvia, y `isalpha()` contestaba una que nadie había elegido.
+
+## De la consola
+
+Esa terminal es PowerShell, y el prompt lo genera una función llamada prompt que puedes redefinir. Para probarlo, pega esto en la terminal de PyCharm:
+
+function prompt { "$((Get-Item .).Name)> " }
+
+El prompt quedará como python>. Usé (Get-Item .).Name en lugar de cortar la ruta a mano porque, si estás en la raíz de una unidad, muestra G:\ en lugar de quedar vacío.
+
+Ese cambio dura solo mientras la terminal esté abierta. Para que sea permanente, agrégalo a tu perfil de PowerShell. Desde la misma terminal de PyCharm:
+
+if (!(Test-Path $PROFILE)) { New-Item -Path $PROFILE -ItemType File -Force }
+notepad $PROFILE
+
+Pega la línea de la función en el archivo que se abre, guárdalo y abre una terminal nueva. Conviene hacerlo desde la terminal de PyCharm y no desde otra ventana, porque $PROFILE apunta a un archivo distinto según si PyCharm usa Windows PowerShell o PowerShell 7, y así queda en el que corresponde.
+
+El (.venv) del inicio debería conservarse, porque PyCharm activa el entorno virtual después de cargar el perfil y el script de activación le antepone ese prefijo a tu prompt. Si al abrir la terminal ves un error de que la ejecución de scripts está deshabilitada, es la política de ejecución de Windows, aunque es poco probable porque el entorno virtual ya se activa con un script.
