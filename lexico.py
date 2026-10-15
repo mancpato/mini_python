@@ -13,7 +13,7 @@ La sangría no se pasa como espacios al analizador sintáctico: se convierte
 en tokens INDENT y DEDENT usando una pila de niveles. Así la gramática
 puede tratarlos como si fueran llaves de apertura y cierre.
 
-Uso: python lexico.py programa.py
+Uso: python lexico.py bien.py
 """
 
 import sys
@@ -46,7 +46,6 @@ ENGANOSOS = {
     "\u2019": "comilla tipográfica; además, el lenguaje no tiene cadenas",
 }
 
-
 @dataclass
 class Token:
     tipo: str      # NUM, ID, DEF, IF, ..., "+", "==", NEWLINE, INDENT, DEDENT, EOF
@@ -57,10 +56,8 @@ class Token:
     def __str__(self):
         return f"{self.linea:>3}:{self.columna:<3} {self.tipo:<8} {self.valor!r}"
 
-
 class ErrorLexico(Exception):
     pass
-
 
 def leer(ruta):
     """Lee el programa como UTF-8, aceptando el BOM que agregan algunos
