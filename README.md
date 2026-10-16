@@ -14,6 +14,17 @@ Es deliberadamente pequeño: solo tiene variables enteras, asignación, `if`, `f
 | `interprete.py` | Intérprete: recorre el árbol y ejecuta el programa. |
 | `pruebas.py` | Pruebas de regresión: verifica que todo lo anterior funcione y siga funcionando. |
 
+Su trabajo consiste en modificar los cuatro primeros, según lo que pida su extensión, y en agregar sus casos a `pruebas.py`. Los demás archivos son de apoyo y no se modifican:
+
+| Archivo | Qué es |
+|---|---|
+| `lexico_simple.py`, `sintactico_simple.py` | Esqueletos de las dos primeras etapas, sin los mensajes ni las protecciones de la versión completa; conviene leerlos primero. Su árbol es de tuplas, no de clases, así que `interprete.py` no lo entiende, y las pruebas no los revisan. |
+| `lex2tok.py` | Escribe los tokens de un programa en un archivo `.tok`, un renglón por cada línea del programa, para compararlos lado a lado con el original. Sirve para revisar cualquier cambio al léxico. |
+| `llaves.py` | Muestra el programa con llaves en lugar de sangría, que es como lo ve el analizador sintáctico. |
+| `ejemplos/` | Programas de ejemplo y, en `ejemplos/errores/`, uno por cada renglón de la tabla «Qué etapa detecta cada error». |
+
+`lex2tok.py` y `llaves.py` dependen de `lexico.py`: de `analizar()` y de los cuatro campos de cada `Token` (tipo, valor, línea y columna). Si su cambio al léxico los conserva, siguen funcionando; `pruebas.py` lo verifica para `lex2tok.py`.
+
 Solo usan la biblioteca estándar de Python (3.8 o posterior); no hay nada que instalar.
 
 ## Uso
@@ -21,13 +32,21 @@ Solo usan la biblioteca estándar de Python (3.8 o posterior); no hay nada que i
 Cada etapa se puede ejecutar por separado, para ver qué produce:
 
 ```
-python lexico.py programa.py       # lista de tokens
-python sintactico.py programa.py   # árbol de sintaxis abstracta
-python interprete.py programa.py   # ejecuta el programa
-python pruebas.py                  # corre todas las pruebas
+python lexico.py ejemplos/ejemplo.py       # lista de tokens
+python sintactico.py ejemplos/ejemplo.py   # árbol de sintaxis abstracta
+python interprete.py ejemplos/ejemplo.py   # ejecuta el programa
+python pruebas.py                          # corre todas las pruebas
 ```
 
-En Linux, use `python3` en lugar de `python`.
+Y las herramientas de apoyo:
+
+```
+python lex2tok.py ejemplos/ejemplo.py      # escribe ejemplos/ejemplo.tok
+python llaves.py ejemplos/ejemplo.py       # el programa con llaves
+python sintactico_simple.py ejemplos/ejemplo.py   # árbol de tuplas, versión simple
+```
+
+`llaves.py` tiene dos opciones más, `--plano` y `--una-linea`, descritas al inicio del archivo. En Linux, use `python3` en lugar de `python`.
 
 ## Un programa de ejemplo
 
@@ -44,7 +63,7 @@ def main():
 main()
 ```
 
-Imprime `25`. La llamada final `main()` es obligatoria.
+Imprime `25`. La llamada final `main()` es obligatoria. Este programa está en `ejemplos/ejemplo.py`.
 
 Aunque el lenguaje es mínimo, alcanza para algoritmos clásicos. Por ejemplo, el máximo común divisor con el algoritmo de Euclides, que normalmente se escribe con `while`, se puede escribir con un `for` cuyo límite seguro alcanza:
 
@@ -62,7 +81,7 @@ def main():
 main()
 ```
 
-Imprime `21`.
+Imprime `21`. Está en `ejemplos/euclides.py`.
 
 ## Un lenguaje propio, no un subconjunto de Python
 
@@ -77,7 +96,9 @@ La gramática está en `gramatica.ebnf`, en notación EBNF:
 | `"x"` | el terminal `x`, literalmente |
 | `{ x }` | cero o más repeticiones de `x` |
 | `[ x ]` | `x` es opcional |
+| `( x )` | agrupa: `( "+" \| "-" )` es `"+"` o `"-"` |
 | `a \| b` | `a` o `b` |
+| `"a" \| ... \| "z"` | todos los caracteres del rango (abreviatura) |
 
 El archivo tiene dos partes. La **sintaxis** describe cómo se combinan los tokens (sentencias, expresiones, bloques). El **léxico** describe cómo se forman los tokens a partir de caracteres (identificadores, números, operadores).
 
@@ -94,10 +115,10 @@ Dos decisiones de la gramática que conviene entender desde el principio:
 Recorre el programa línea por línea. Para cada línea:
 
 1. Cuenta los espacios del inicio y los compara con una **pila de niveles de sangría**. Si la sangría aumenta, apila el nuevo nivel y emite `INDENT`. Si disminuye, desapila hasta encontrar el nivel y emite un `DEDENT` por cada nivel que cierra (pueden ser varios). Si no encuentra el nivel, es un error léxico.
-2. Reconoce los tokens del resto de la línea: números, identificadores, palabras reservadas y operadores. Los operadores de dos caracteres (`//`, `==`, `<=`, …) se prueban antes que los de uno.
+2. Reconoce los tokens del resto de la línea: números, identificadores, palabras reservadas y operadores. Los operadores de dos caracteres (`//`, `==`, `<=`, …) se prueban antes que los de uno, y un identificador se lee completo antes de decidir si es palabra reservada. Es la regla del lexema más largo: `<=` es un solo token, e `ifx` es un identificador, no `if` seguido de `x`.
 3. Emite `NEWLINE` al final de la línea.
 
-Las líneas vacías y los comentarios (desde `#` hasta el fin de línea) no producen tokens. El alfabeto es ASCII: letras sin acento, dígitos, `_` y los símbolos de los operadores. Algunos caracteres que se ven iguales a otros válidos (el espacio no separable, la raya `—`, las comillas tipográficas), y que suelen colarse al copiar código desde una presentación o un PDF, reciben un mensaje de error específico.
+Las líneas vacías y los comentarios (desde `#` hasta el fin de línea) no producen tokens. El alfabeto es ASCII: letras sin acento, dígitos, `_` y los símbolos de los operadores. Algunos caracteres que se ven iguales a otros válidos (el espacio no separable, la raya `—`, las comillas tipográficas), y que suelen colarse al copiar código desde una presentación o un PDF, reciben un mensaje de error específico. Cualquier otro carácter fuera de ASCII se reporta con su código y su nombre Unicode, por ejemplo `'а' (U+0430 CYRILLIC SMALL LETTER A)`, para distinguirlo del carácter válido al que se parece.
 
 ### Analizador sintáctico (`sintactico.py`)
 
@@ -117,14 +138,14 @@ Recorre el árbol con dos funciones: `ejecutar()` procesa sentencias, que no dev
 
 La gramática dice qué programas son válidos; esta sección dice qué hacen. Es la definición del lenguaje: el intérprete debe cumplirla, y cualquier otra implementación se compara contra ella, no contra Python.
 
-**Valores.** Solo hay enteros, positivos o negativos, sin límite de tamaño.
+**Valores.** Solo hay enteros (positivos, negativos y el cero), sin límite de tamaño.
 
 **Variables.** Hay un solo espacio de nombres, el de `main`. Una variable existe a partir de su primera asignación. Usar una variable que no tiene valor es error de ejecución.
 
 **Expresiones.** En una operación binaria se evalúa primero el operando izquierdo y después el derecho; esto decide qué error aparece si ambos fallan. Los operadores:
 - `+`, `-`, `*` y el menos unario tienen su significado aritmético usual.
 - `a // b` es el cociente redondeado hacia menos infinito: `7 // 2` es `3` y `-7 // 2` es `-4`.
-- `a % b` es el residuo que cumple `a == (a // b) * b + a % b`; su signo es el del divisor: `-7 % 2` es `1` y `7 % -2` es `-1`.
+- `a % b` es el residuo que cumple `a == (a // b) * b + a % b`; su signo es el del divisor cuando no es cero: `-7 % 2` es `1` y `7 % -2` es `-1`.
 - `//` y `%` con divisor cero son error de ejecución.
 
 **Condiciones.** Comparan dos enteros. No son valores: no se pueden asignar ni imprimir.
@@ -137,7 +158,7 @@ La gramática dice qué programas son válidos; esta sección dice qué hacen. E
 
 **Errores de ejecución.** Detienen el programa con un mensaje del lenguaje. Ningún programa, válido o no, debe producir un traceback de Python.
 
-**Terminación.** Todo programa termina.
+**Terminación.** Todo programa termina: cada `for` fija su número de vueltas antes de empezar, y no hay otra forma de repetir. Pero terminar no es terminar pronto: `x = x * x` duplica en cada vuelta los bits de `x`, y si `x` empieza en 2, cien vueltas darían un número de 2^100 bits. Agotar la memoria es error de ejecución (en Linux, el sistema operativo puede terminar el proceso antes).
 
 ## Qué etapa detecta cada error
 
@@ -158,13 +179,17 @@ Cada error lo detecta una etapa distinta, y saber cuál es parte de entender el 
 | `print(x)` sin asignar `x` | ejecución | es válido sintácticamente; el problema solo aparece al ejecutar |
 | `x // 0` | ejecución | ídem |
 
+Cada renglón tiene un programa completo en `ejemplos/errores/`, cuyo nombre empieza con la etapa que detecta el error.
+
 ## Las pruebas (`pruebas.py`)
 
-`pruebas.py` corre una lista de programas y compara lo que producen con lo esperado. Hay tres tipos de casos:
+`pruebas.py` corre una lista de programas y compara lo que producen con lo esperado. Hay tres listas de casos:
 
 - **`CASOS`**: se ejecutan con `interprete.py`. Cada caso es `(nombre, programa, salida esperada, comparar_con_python)`. La salida esperada es lo que el programa imprime o, si hay un error, el mensaje exacto. Si el último campo es `True`, el programa también se ejecuta con Python y debe dar lo mismo.
 - **`CASOS_ARBOL`**: se ejecutan con `sintactico.py` y comparan el árbol impreso. Sirven para lo que solo se ve en el árbol, como la asociatividad.
-- **La verificación de la gramática**: lee `gramatica.ebnf` y comprueba que el docstring de cada método del parser coincide con la regla del mismo nombre.
+- **`CASOS_TOK`**: se ejecutan con `lex2tok.py` y comparan el archivo `.tok` que genera.
+
+También hay dos verificaciones fijas. La de la gramática lee `gramatica.ebnf` y comprueba que el docstring de cada método del parser coincide con la regla del mismo nombre. La otra le pasa a cada script una carpeta en lugar de un programa, y espera un mensaje, no un traceback.
 
 Además, cualquier salida que contenga un traceback de Python cuenta como falla, aunque el caso no lo haya previsto, y cada caso tiene un límite de tiempo, para que un ciclo infinito cuente como falla en lugar de dejar colgadas las pruebas.
 
@@ -185,7 +210,7 @@ Junto a cada extensión hay preguntas que su exposición debe responder. No son 
 | Extensión | Preguntas que deben responder |
 |---|---|
 | `range(a, b, paso)` | ¿Qué pasa con un paso negativo? ¿Y con paso cero? Especifíquenlo en la semántica. |
-| `while` | ¿Qué propiedad del lenguaje base se pierde (ver «Terminación»)? ¿Qué cambia en las pruebas? |
+| `while` | ¿Qué propiedad del lenguaje base se pierde (ver «Terminación»)? ¿Qué cambia en las pruebas? ¿Existe un programa de MiniPy base que imprima A(n, n), la función de Ackermann, para cualquier valor de `n` en su primera asignación? ¿Y con `while`? |
 | `elif` | ¿Necesitaron un nodo nuevo en el árbol, o pudieron expresarlo con los nodos que ya existen? |
 | `+=`, `-=`, `*=` | ¿En qué orden debe probar el léxico `+=` y `+`, y por qué? ¿Nodo nuevo o traducción a una `Asignacion`? |
 | `print` con varios argumentos | ¿Qué imprime entre un valor y otro? ¿Cómo se escribe en la gramática una lista separada por comas? |

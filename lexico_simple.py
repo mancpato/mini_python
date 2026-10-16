@@ -1,5 +1,8 @@
 """
-Esqueleto del analizador léxico de MiniPy, sin ninguna protección.
+Esqueleto del analizador léxico de MiniPy, sin protecciones. Solo detecta
+el error que es parte del algoritmo de la sangría: regresar a un nivel que
+no está en la pila.
+
 Uso: python lexico_simple.py programa.py
 """
 import sys
@@ -25,6 +28,8 @@ def analizar(texto):
         while sangria < pila[-1]:
             pila.pop()
             tokens.append(("DEDENT", ""))
+        if sangria != pila[-1]:                # regresó a un nivel que no existe
+            raise SyntaxError("la sangría no coincide con ningún nivel anterior")
 
         # 2. Resto de la línea: reconocer lexemas
         i = sangria
@@ -64,5 +69,6 @@ def analizar(texto):
 
 
 if __name__ == "__main__":
-    for token in analizar(open(sys.argv[1], encoding="utf-8").read()):
+    # utf-8-sig acepta el BOM que agregan algunos editores de Windows
+    for token in analizar(open(sys.argv[1], encoding="utf-8-sig").read()):
         print(token)

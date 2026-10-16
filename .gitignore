@@ -1,15 +1,11 @@
-# Python
 __pycache__/
 *.pyc
+*.tok
+
 .venv/
 
-# PyCharm
+*.pptx
+pyGLC.md
+
 .idea/
 
-# Office (incluye los archivos temporales ~$)
-*.pptx
-~$*
-
-# Windows y Google Drive
-desktop.ini
-Thumbs.db

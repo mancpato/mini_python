@@ -16,9 +16,20 @@ import io
 import sys
 from contextlib import redirect_stdout
 from dataclasses import dataclass, fields
-from lexico import analizar, leer, ErrorLexico
+from lexico import analizar, leer_o_salir, ErrorLexico, RESERVADAS
 
 OPREL = {"==", "!=", "<", "<=", ">", ">="}
+
+
+def nombre_esperado(tipo):
+    """Cómo se nombra en un mensaje el token que se esperaba: las palabras
+    reservadas y los operadores, entre comillas y como se escriben ('def',
+    ')', '=='); ID, NUM, NEWLINE, INDENT, DEDENT y EOF, por su nombre."""
+    if tipo.lower() in RESERVADAS:
+        return repr(tipo.lower())
+    if tipo.isupper():
+        return tipo
+    return repr(tipo)
 
 
 # ------------------------------------------------------------------
@@ -105,7 +116,7 @@ class Parser:
     def consumir(self, tipo):
         """Exige un token del tipo dado, lo consume y lo devuelve."""
         if not self.ver(tipo):
-            self.error(tipo)
+            self.error(nombre_esperado(tipo))
         tok = self.actual()
         self.pos += 1
         return tok
@@ -271,15 +282,13 @@ if __name__ == "__main__":
         sys.set_int_max_str_digits(0)
 
     try:
-        arbol = Parser(analizar(leer(sys.argv[1]))).programa()
+        arbol = Parser(analizar(leer_o_salir(sys.argv[1]))).programa()
         # El árbol se arma en memoria y se imprime al final: si la recursión
         # se agota a la mitad, sale solo el mensaje de error.
         texto = io.StringIO()
         with redirect_stdout(texto):
             mostrar(arbol)
         print(texto.getvalue(), end="")
-    except FileNotFoundError:
-        sys.exit(f"No se encontró el archivo {sys.argv[1]}")
     except ErrorLexico as e:
         sys.exit(f"Error léxico: {e}")
     except ErrorSintactico as e:

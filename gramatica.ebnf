@@ -1,8 +1,11 @@
-(* Gramática de MiniPy en EBNF, notación de Wirth:                  *)
+(* Gramática de MiniPy en EBNF:                                       *)
 (*   "x"     terminal literal                                         *)
 (*   { x }   cero o más repeticiones de x                             *)
 (*   [ x ]   x es opcional                                            *)
+(*   ( x )   agrupación                                               *)
 (*   a | b   a o b                                                    *)
+(*   ...     abrevia un rango de caracteres: "a" | ... | "z"          *)
+(* Las reglas se escriben con ::=, como en BNF.                       *)
 (* Este archivo es la referencia oficial del lenguaje: el analizador  *)
 (* sintáctico y el léxico deben seguirlo.                             *)
 
@@ -34,8 +37,12 @@ letra           ::= "a" | ... | "z" | "A" | ... | "Z"           (* solo ASCII: s
 digito          ::= "0" | digito_no_cero
 digito_no_cero  ::= "1" | ... | "9"
 
-(* Palabras reservadas: def main if else for in range print            *)
-(* NEWLINE, INDENT y DEDENT los genera el léxico a partir de los fines  *)
-(* de línea y de la sangría (una pila de niveles).                      *)
-(* Espacios y tabuladores separan tokens; la sangría solo usa espacios. *)
-(* Comentarios: desde "#" hasta el fin de línea; el léxico los descarta. *)
+(* Palabras reservadas: def main if else for in range print           *)
+(* El léxico toma siempre el lexema más largo posible: <= es un solo  *)
+(* token y no < seguido de =, e ifx es un ID y no if seguido de x. Un *)
+(* lexema es palabra reservada solo si coincide completo con una.     *)
+(* El léxico genera NEWLINE, INDENT y DEDENT a partir de los fines de *)
+(* línea y de la sangría (con una pila de niveles).                   *)
+(* Espacios y tabuladores separan tokens; la sangría solo admite      *)
+(* espacios.                                                          *)
+(* Comentarios: de # al fin de la línea; el léxico los descarta.      *)

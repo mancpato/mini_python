@@ -19,7 +19,7 @@ Uso: python llaves.py [--plano | --una-linea] programa.py
 """
 
 import sys
-from lexico import analizar, leer, ErrorLexico
+from lexico import analizar, leer_o_salir, ErrorLexico
 
 SANGRIA = "    "
 MODOS = {"--plano": "plano", "--una-linea": "una-linea"}
@@ -72,8 +72,6 @@ if __name__ == "__main__":
         sys.exit("Uso: python llaves.py [--plano | --una-linea] programa.py")
 
     try:
-        print(a_llaves(analizar(leer(args[0])), modo))
-    except FileNotFoundError:
-        sys.exit(f"No se encontró el archivo {args[0]}")
+        print(a_llaves(analizar(leer_o_salir(args[0])), modo))
     except ErrorLexico as e:
         sys.exit(f"Error léxico: {e}")

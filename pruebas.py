@@ -4,18 +4,21 @@ Pruebas de regresión de MiniPy.
 Corre cada caso de CASOS con interprete.py, cada caso de CASOS_ARBOL con
 sintactico.py y cada caso de CASOS_TOK con lex2tok.py, y compara la salida
 (o el mensaje de error, o el archivo .tok) con la esperada.
-Los casos son los de pyGLC.md, más algunos que en versiones anteriores
-producían un traceback de Python.
+Los casos incluyen los ejemplos y la tabla «Qué etapa detecta cada error»
+de README.md, más algunos que en versiones anteriores producían un
+traceback de Python.
 
-Un caso más no corre ningún programa: lee gramatica.ebnf y comprueba que
-el docstring de cada método de regla de Parser sea la regla del mismo
-nombre. Así ningún archivo repite la gramática sin verificación.
+Hay además dos verificaciones fijas. Una no ejecuta ningún script: lee
+gramatica.ebnf y comprueba que el docstring de cada método de regla de
+Parser sea la regla del mismo nombre. Así ningún archivo repite la
+gramática sin verificación. La otra le pasa a cada script una carpeta en
+lugar de un programa, y espera un mensaje, no un traceback.
 
 En los programas válidos de CASOS también se corre Python, para confirmar
 que dan el mismo resultado.
 
 Toda salida con un traceback de Python cuenta como falla, aunque el caso no
-lo haya previsto: la especificación (pyGLC.md, «Semántica de MiniPy») exige
+lo haya previsto: la especificación (README.md, «Semántica de MiniPy») exige
 que toda excepción se traduzca a un error del lenguaje.
 
 Cada caso tiene un límite de tiempo: con while, un ciclo infinito cuenta
@@ -33,16 +36,21 @@ import tempfile
 
 from sintactico import Parser
 
-# La consola de Windows no es UTF-8: sin esto, imprimir un carácter que su
-# codificación no tiene (la ligadura 'fi' del caso que la prueba) aborta las
-# pruebas con un UnicodeEncodeError en lugar de reportar el caso.
-sys.stdout.reconfigure(errors="backslashreplace")
+# Al redirigir la salida (python pruebas.py > salida.txt), Windows la escribe
+# en su codificación local, que no tiene todos los caracteres (por ejemplo,
+# la ligadura 'fi' del caso que la prueba): sin esto, reportar ese caso
+# abortaría las pruebas con un UnicodeEncodeError. IDLE reemplaza sys.stdout
+# por un objeto sin reconfigure(), que de todos modos acepta Unicode.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="backslashreplace")
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 TRACEBACK = "Traceback (most recent call last)"
-INTERPRETE = os.path.join(AQUI, "interprete.py")
+LEXICO = os.path.join(AQUI, "lexico.py")
 SINTACTICO = os.path.join(AQUI, "sintactico.py")
+INTERPRETE = os.path.join(AQUI, "interprete.py")
 LEX2TOK = os.path.join(AQUI, "lex2tok.py")
+LLAVES = os.path.join(AQUI, "llaves.py")
 GRAMATICA = os.path.join(AQUI, "gramatica.ebnf")
 
 # Reglas sintácticas: cada una tiene un método de Parser con su nombre y con
@@ -54,8 +62,8 @@ REGLAS = ["programa", "bloque", "sentencia", "asignacion", "imprimir", "si",
 # a gramatica.ebnf y nadie la implementa.
 REGLAS_LEXICAS = ["ID", "NUM", "OPREL", "letra", "digito", "digito_no_cero"]
 LIMITE_SEGUNDOS = 10
-# En Windows, la salida de un proceso hijo usa la codificación local;
-# así los mensajes con acentos llegan bien
+# En Windows, un proceso hijo con la salida redirigida escribe en la
+# codificación local; así escribe en UTF-8, que es como la lee correr()
 ENTORNO = dict(os.environ, PYTHONIOENCODING="utf-8")
 
 # Casos para interprete.py:
@@ -80,7 +88,37 @@ CASOS = [
     ("factorial", "def main():\n    f = 1\n    for i in range(1, 31):\n"
      "        f = f * i\n    print(f)\n\nmain()\n",
      "265252859812191058636308480000000", True),
-    # --- Semántica de MiniPy (pyGLC.md): casos que en C o Java darían otra cosa ---
+
+    # --- Cada construcción de la gramática, al menos una vez ---
+    # range(b) es range(0, b): el parser agrega un Num(0) que no está en el texto
+    ("range con un solo argumento", "def main():\n    s = 0\n    for i in range(4):\n"
+     "        s = s + i\n    print(s)\n    print(i)\n\nmain()\n", "6\n3", True),
+    # Cada operador suma una cifra distinta de r: 1 (==), 10 (!=), 100 (<),
+    # 1000 (<=), 10000 (>) y 100000 (>=). Con a = 4, 5 y 6, cada operador se
+    # prueba con un valor menor, uno igual y uno mayor que 5.
+    ("los seis operadores relacionales", "def main():\n    for a in range(4, 7):\n"
+     "        r = 0\n        if a == 5:\n            r = r + 1\n"
+     "        if a != 5:\n            r = r + 10\n        if a < 5:\n"
+     "            r = r + 100\n        if a <= 5:\n            r = r + 1000\n"
+     "        if a > 5:\n            r = r + 10000\n        if a >= 5:\n"
+     "            r = r + 100000\n        print(r)\n\nmain()\n",
+     "1110\n101001\n110010", True),
+    ("paréntesis y menos unario", "def main():\n    print((1 + 2) * 3)\n"
+     "    print(2 * (10 - 4) // 4)\n    print(-(2 + 3))\n    print(2 - -3)\n\nmain()\n",
+     "9\n3\n-5\n5", True),
+    # La sangría decide de qué if es el else: con INDENT y DEDENT no hay else
+    # colgante. Si el else fuera del if interno, imprimiría 2 en lugar de 4.
+    ("else del if externo", "def main():\n    a = 1\n    b = 0\n    if a > 0:\n"
+     "        if b > 0:\n            print(1)\n    else:\n        print(2)\n"
+     "    if a < 0:\n        if b > 0:\n            print(3)\n    else:\n"
+     "        print(4)\n\nmain()\n", "4", True),
+    # Una línea con solo un comentario no abre ni cierra bloques, tenga la
+    # sangría que tenga
+    ("comentarios con cualquier sangría", "def main():\n    x = 1\n# en la columna 0\n"
+     "            # con sangría de más\n    if x > 0:\n        # dentro del if\n"
+     "        x = 2\n  # en un nivel que no existe\n    print(x)\n\nmain()\n",
+     "2", True),
+    # --- Semántica de MiniPy (README.md): casos que en C o Java darían otra cosa ---
     ("// y % redondean hacia menos infinito",
      "def main():\n    print(-7 // 2)\n    print(-7 % 2)\n    print(7 % -2)\n\nmain()\n",
      "-4\n1\n-1", True),
@@ -95,6 +133,9 @@ CASOS = [
     ("orden de evaluación", "def main():\n    print(x + 1 // 0)\n\nmain()\n",
      "Error de ejecución: la variable 'x' no tiene valor", False),
     ("BOM al inicio", b"\xef\xbb\xbfdef main():\n    print(1)\n\nmain()\n", "1", True),
+    # leer() abre en binario: los \r\n llegan al léxico, que debe convertirlos
+    ("fines de línea de Windows (CRLF)", b"def main():\r\n    print(1)\r\n\r\nmain()\r\n",
+     "1", True),
 
     # --- Errores léxicos ---
     ("división con /", "def main():\n    suma = 0\n    for i in range(1, 6):\n"
@@ -128,25 +169,32 @@ CASOS = [
     ("comillas simples tipográficas", "def main():\n    x = \u2018a\u2019\n\nmain()\n",
      "Error léxico: línea 2, columna 9: comilla tipográfica; además, "
      "el lenguaje no tiene cadenas", False),
+    ("número con punto decimal", "def main():\n    x = 2.5\n    print(x)\n\nmain()\n",
+     "Error léxico: línea 2, columna 10: carácter inesperado '.'", False),
+    ("tabulador en la sangría", "def main():\n\tprint(1)\n\nmain()\n",
+     "Error léxico: línea 2: use espacios, no tabuladores", False),
     ("tabulador antes de comentario", "def main():\n    x = 1\t# uno\n    print(x)\n\nmain()\n",
      "1", True),
     # letra y digito son solo ASCII: estos tres se leían como identificadores
     # válidos cuando el léxico usaba isalpha() e isalnum(). El error cae en el
     # primer carácter que no pertenece al alfabeto, no al inicio del lexema.
     ("identificador con acento", "def main():\n    año = 1\n    print(año)\n\nmain()\n",
-     "Error léxico: línea 2, columna 6: carácter inesperado 'ñ': "
+     "Error léxico: línea 2, columna 6: carácter inesperado 'ñ' "
+     "(U+00F1 LATIN SMALL LETTER N WITH TILDE): "
      "los identificadores solo admiten letras sin acento, dígitos y '_'", False),
     # '²' no es una letra para Unicode, pero isalnum() lo acepta, así que x²
     # pasaba como un identificador que Python rechaza
     ("exponente en el identificador", "def main():\n    x² = 1\n\nmain()\n",
-     "Error léxico: línea 2, columna 6: carácter inesperado '²': "
+     "Error léxico: línea 2, columna 6: carácter inesperado '²' "
+     "(U+00B2 SUPERSCRIPT TWO): "
      "los identificadores solo admiten letras sin acento, dígitos y '_'", False),
     # La ligadura 'ﬁ' (U+FB01) es un solo carácter; suele salir al copiar de un
     # PDF. Antes, 'ﬁn' y 'fin' eran dos variables distintas y el programa decía
     # que 'fin' no tiene valor, mientras que Python imprime 10 (normaliza a NFKC)
     ("ligadura fi (U+FB01) de un PDF",
      "def main():\n    ﬁn = 10\n    print(fin)\n\nmain()\n",
-     "Error léxico: línea 2, columna 5: carácter inesperado 'ﬁ': "
+     "Error léxico: línea 2, columna 5: carácter inesperado 'ﬁ' "
+     "(U+FB01 LATIN SMALL LIGATURE FI): "
      "los identificadores solo admiten letras sin acento, dígitos y '_'", False),
 
     # --- Errores sintácticos ---
@@ -154,17 +202,21 @@ CASOS = [
      "Error sintáctico: línea 2, columna 5: se esperaba una sentencia, se encontró '2'", False),
     ("elif", "def main():\n    x = 7\n    if x < 0:\n        print(-1)\n"
      "    elif x == 0:\n        print(0)\n\nmain()\n",
-     "Error sintáctico: línea 5, columna 10: se esperaba =, se encontró 'x'", False),
+     "Error sintáctico: línea 5, columna 10: se esperaba '=', se encontró 'x'", False),
     ("sangría de más", "def main():\n    x = 10\n        print(x)\n\nmain()\n",
      "Error sintáctico: línea 3, columna 1: se esperaba una sentencia, se encontró INDENT", False),
     # programa exige la llamada final; sin ella, el parser llega al EOF
     ("sin main() final", "def main():\n    print(7)\n",
-     "Error sintáctico: línea 3, columna 1: se esperaba MAIN, se encontró EOF",
+     "Error sintáctico: línea 3, columna 1: se esperaba 'main', se encontró EOF",
      False),
 
     ("paréntesis en la condición", "def main():\n    x = 3\n    if (x > 0):\n"
      "        print(x)\n\nmain()\n",
-     "Error sintáctico: línea 3, columna 11: se esperaba ), se encontró '>'", False),
+     "Error sintáctico: línea 3, columna 11: se esperaba ')', se encontró '>'", False),
+    ("asignación en la condición", "def main():\n    x = 1\n    if x = 3:\n"
+     "        print(x)\n\nmain()\n",
+     "Error sintáctico: línea 3, columna 10: se esperaba un operador relacional, "
+     "se encontró '='", False),
     # Con 1000 términos ya falla, pero por un margen de solo tres llamadas,
     # que puede cambiar entre versiones de Python; 5000 deja margen amplio.
     ("suma plana de 5000 términos",
@@ -179,7 +231,9 @@ CASOS = [
     # --- Errores de ejecución ---
     ("variable sin valor", "def main():\n    print(x)\n\nmain()\n",
      "Error de ejecución: la variable 'x' no tiene valor", False),
-    ("división entre cero", "def main():\n    x = 0\n    print(5 % x)\n\nmain()\n",
+    ("residuo entre cero", "def main():\n    x = 0\n    print(5 % x)\n\nmain()\n",
+     "Error de ejecución: división entre cero", False),
+    ("cociente entre cero", "def main():\n    x = 7\n    print(x // 0)\n\nmain()\n",
      "Error de ejecución: división entre cero", False),
 ]
 
@@ -266,8 +320,10 @@ def probar(carpeta, nombre, programa, esperado, script, con_python=False):
 def probar_tok(carpeta, nombre, programa, esperado):
     """Corre lex2tok.py y compara el archivo .tok que genera."""
     ruta = os.path.join(carpeta, "caso.py")
-    with open(ruta, "w", encoding="utf-8") as f:
-        f.write(programa)
+    # En bytes, como en probar(): en modo texto, Windows escribiría "\r\n"
+    # y el caso no sería el mismo en todos los sistemas
+    with open(ruta, "wb") as f:
+        f.write(programa.encode("utf-8"))
     salida = correr([sys.executable, LEX2TOK, ruta])
     try:
         with open(os.path.join(carpeta, "caso.tok"), encoding="utf-8") as f:
@@ -279,6 +335,28 @@ def probar_tok(carpeta, nombre, programa, esperado):
         print(f"FALLA  {nombre}\n  se esperaba:\n{esperado}\n  caso.tok tiene:\n{obtenido}")
         if TRACEBACK in salida:
             print(f"  lex2tok.py mostró un traceback:\n{salida}")
+        return False
+    print(f"ok     {nombre}")
+    return True
+
+
+def probar_carpeta(carpeta):
+    """Le pasa a cada script una carpeta en lugar de un programa. Abrirla da
+    IsADirectoryError en Linux y PermissionError en Windows; ninguno de los
+    dos debe llegar al usuario como traceback."""
+    nombre = "una carpeta como argumento"
+    esperado = (f"No se pudo leer {carpeta} "
+                "(¿es una carpeta, o no tiene permiso de lectura?)")
+    problemas = []
+    for script in (LEXICO, SINTACTICO, INTERPRETE, LEX2TOK, LLAVES):
+        obtenido = correr([sys.executable, script, carpeta])
+        if obtenido != esperado:
+            problemas.append(f"{os.path.basename(script)} dio:\n{obtenido}")
+
+    if problemas:
+        print(f"FALLA  {nombre}\n  se esperaba:\n{esperado}")
+        for p in problemas:
+            print("  " + p)
         return False
     print(f"ok     {nombre}")
     return True
@@ -305,8 +383,8 @@ def reglas_de_la_gramatica(texto):
 
 def probar_gramatica():
     """Comprueba que el docstring de cada método de regla de Parser sea la
-    regla del mismo nombre de gramatica.ebnf. Es la única prueba que no corre
-    ningún programa: vigila que el código no repita la gramática sin
+    regla del mismo nombre de gramatica.ebnf. Es la única prueba que no ejecuta
+    ningún script: vigila que el código no repita la gramática sin
     verificación, porque si una cambia y la otra no, esto falla."""
     nombre = "los docstrings de Parser coinciden con gramatica.ebnf"
     try:
@@ -349,7 +427,7 @@ def probar_gramatica():
 
 def main():
     correctos = 0
-    total = len(CASOS) + len(CASOS_ARBOL) + len(CASOS_TOK) + 1
+    total = len(CASOS) + len(CASOS_ARBOL) + len(CASOS_TOK) + 2
     with tempfile.TemporaryDirectory() as carpeta:
         print("--- interprete.py ---")
         for nombre, programa, esperado, con_python in CASOS:
@@ -361,6 +439,8 @@ def main():
         print("\n--- lex2tok.py ---")
         for nombre, programa, esperado in CASOS_TOK:
             correctos += probar_tok(carpeta, nombre, programa, esperado)
+        print("\n--- todos los scripts ---")
+        correctos += probar_carpeta(carpeta)
     print("\n--- gramatica.ebnf ---")
     correctos += probar_gramatica()
 

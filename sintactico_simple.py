@@ -24,7 +24,9 @@ def consumir(*tipos):
     """Exige un token de alguno de estos tipos, avanza y devuelve su valor."""
     global pos
     if not ver(*tipos):
-        raise SyntaxError(f"se esperaba {tipos}, se encontró {tokens[pos]}")
+        tipo, valor = tokens[pos]
+        raise SyntaxError(f"se esperaba {' o '.join(tipos)}, "
+                          f"se encontró {valor or tipo}")
     pos += 1
     return tokens[pos - 1][1]
 
@@ -151,5 +153,6 @@ def factor():
 
 
 if __name__ == "__main__":
-    tokens = analizar(open(sys.argv[1], encoding="utf-8").read())
+    # utf-8-sig acepta el BOM que agregan algunos editores de Windows
+    tokens = analizar(open(sys.argv[1], encoding="utf-8-sig").read())
     pprint(programa(), width=60)

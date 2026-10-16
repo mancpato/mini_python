@@ -26,7 +26,7 @@ Uso: python lex2tok.py programa.py
 
 import os
 import sys
-from lexico import analizar, leer, ErrorLexico
+from lexico import analizar, leer_o_salir, ErrorLexico
 
 
 def nombre_token(t):
@@ -62,16 +62,17 @@ if __name__ == "__main__":
     encabezado = f"# Tokens de {os.path.basename(entrada)}, generado por lex2tok.py\n"
 
     try:
-        contenido = encabezado + a_compacto(analizar(leer(entrada))) + "\n"
+        contenido = encabezado + a_compacto(analizar(leer_o_salir(entrada))) + "\n"
         error = None
-    except FileNotFoundError:
-        sys.exit(f"No se encontró el archivo {entrada}")
     except ErrorLexico as e:
         error = f"Error léxico: {e}"
         contenido = encabezado + f"# {error}\n"
 
-    with open(salida, "w", encoding="utf-8") as f:
-        f.write(contenido)
+    try:
+        with open(salida, "w", encoding="utf-8") as f:
+            f.write(contenido)
+    except OSError:
+        sys.exit(f"No se pudo escribir {salida}")
 
     if error:
         sys.exit(f"{error}\n(se escribió el error en {salida})")

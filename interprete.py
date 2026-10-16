@@ -10,7 +10,7 @@ Uso: python interprete.py programa.py
 """
 
 import sys
-from lexico import analizar, leer, ErrorLexico
+from lexico import analizar, leer_o_salir, ErrorLexico
 from sintactico import (Parser, ErrorSintactico, Asignacion, Imprimir, Si, Para,
                         BinOp, Condicion, Negativo, Num, Var)
 
@@ -95,10 +95,8 @@ if __name__ == "__main__":
         sys.set_int_max_str_digits(0)
 
     try:
-        arbol = Parser(analizar(leer(sys.argv[1]))).programa()
+        arbol = Parser(analizar(leer_o_salir(sys.argv[1]))).programa()
         ejecutar(arbol.cuerpo, {})
-    except FileNotFoundError:
-        sys.exit(f"No se encontró el archivo {sys.argv[1]}")
     except ErrorLexico as e:
         sys.exit(f"Error léxico: {e}")
     except ErrorSintactico as e:
@@ -111,6 +109,12 @@ if __name__ == "__main__":
         # términos sin paréntesis da un árbol de profundidad 999.
         sys.exit("Error: el árbol del programa es demasiado profundo "
                  "(mucho anidamiento o una expresión muy larga)")
+    except MemoryError:
+        # Todo programa termina, pero un número puede crecer más rápido que
+        # la memoria: x = x * x duplica en cada vuelta los bits de x. (En
+        # Linux, el sistema puede terminar el proceso antes de que Python
+        # lance MemoryError.)
+        sys.exit("Error de ejecución: se agotó la memoria")
     except KeyboardInterrupt:
         # Todo programa del lenguaje base termina, pero puede tardar muchísimo;
         # con while aparecen los ciclos infinitos. Ctrl+C sin traceback.

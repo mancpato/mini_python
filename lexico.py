@@ -1,5 +1,6 @@
 """
-Analizador léxico para MiniPy (subconjunto mínimo de Python).
+Analizador léxico para MiniPy (lenguaje mínimo con sintaxis parecida a la
+de Python).
 
 Entrada: el texto del programa.
 Salida:  una lista de tokens, terminada en EOF.
@@ -13,10 +14,11 @@ La sangría no se pasa como espacios al analizador sintáctico: se convierte
 en tokens INDENT y DEDENT usando una pila de niveles. Así la gramática
 puede tratarlos como si fueran llaves de apertura y cierre.
 
-Uso: python lexico.py bien.py
+Uso: python lexico.py programa.py
 """
 
 import sys
+import unicodedata
 from dataclasses import dataclass
 
 RESERVADAS = {"def", "main", "if", "else", "for", "in", "range", "print"}
@@ -46,6 +48,16 @@ ENGANOSOS = {
     "\u2019": "comilla tipográfica; además, el lenguaje no tiene cadenas",
 }
 
+
+def describir(c):
+    """El carácter entre comillas y, si no es ASCII, también su código y su
+    nombre Unicode, que distinguen caracteres que se ven iguales: la 'a'
+    latina y la 'а' cirílica (U+0430), o un espacio y un espacio fino."""
+    if ord(c) < 128:
+        return repr(c)
+    return f"{c!r} (U+{ord(c):04X} {unicodedata.name(c, 'sin nombre')})"
+
+
 @dataclass
 class Token:
     tipo: str      # NUM, ID, DEF, IF, ..., "+", "==", NEWLINE, INDENT, DEDENT, EOF
@@ -73,14 +85,31 @@ def leer(ruta):
                           "(guárdelo como UTF-8 desde el editor)")
 
 
+def leer_o_salir(ruta):
+    """leer() para los programas de línea de comandos: si el archivo no se
+    puede abrir, termina con un mensaje en lugar de un traceback. Abrir una
+    carpeta da IsADirectoryError en Linux y PermissionError en Windows; las
+    dos son OSError. Un error de codificación sigue siendo ErrorLexico, para
+    que cada programa lo trate como los demás errores léxicos."""
+    try:
+        return leer(ruta)
+    except FileNotFoundError:
+        sys.exit(f"No se encontró el archivo {ruta}")
+    except OSError:
+        sys.exit(f"No se pudo leer {ruta} "
+                 "(¿es una carpeta, o no tiene permiso de lectura?)")
+
+
 def analizar(texto):
     tokens = []
     pila = [0]  # niveles de sangría abiertos; el 0 nunca se saca
 
+    # leer() abre el archivo en binario, así que los "\r\n" de Windows llegan
+    # tal cual: sin esta conversión, cada "\r" sería un carácter inesperado.
+    # Un "\r" solo (Mac OS clásico) también es fin de línea, como en Python.
     # Se separa solo en "\n". splitlines() también corta en caracteres como
     # el separador de línea Unicode (U+2028), y aceptaría en silencio un
-    # programa que Python rechaza. open() ya convierte "\r\n" en "\n", pero
-    # analizar() puede recibir texto de otra fuente.
+    # programa que Python rechaza.
     texto = texto.replace("\r\n", "\n").replace("\r", "\n")
     lineas = texto.split("\n")
     if lineas[-1] == "":        # el "\n" final no abre una línea nueva
@@ -153,21 +182,21 @@ def analizar(texto):
                 i += 1
 
             elif c in ENGANOSOS:
-                # Va antes de la rama siguiente: un carácter engañoso puede
-                # ser alfanumérico (por ejemplo la 'а' cirílica, U+0430) y su
-                # mensaje es más preciso que el de aquí abajo.
+                # Va antes de las dos ramas siguientes, que solo dicen que el
+                # carácter es inesperado; aquí se explica qué carácter es.
                 raise ErrorLexico(f"línea {n}, columna {col}: {ENGANOSOS[c]}")
 
             elif c.isalnum():
                 # Alfanumérico para Unicode, pero no para el alfabeto del
                 # lenguaje: á, ñ, ², ₁, la ligadura ﬁ...
                 raise ErrorLexico(
-                    f"línea {n}, columna {col}: carácter inesperado {c!r}: "
-                    "los identificadores solo admiten letras sin acento, "
-                    "dígitos y '_'")
+                    f"línea {n}, columna {col}: carácter inesperado "
+                    f"{describir(c)}: los identificadores solo admiten "
+                    "letras sin acento, dígitos y '_'")
 
             else:
-                raise ErrorLexico(f"línea {n}, columna {col}: carácter inesperado {c!r}")
+                raise ErrorLexico(f"línea {n}, columna {col}: "
+                                  f"carácter inesperado {describir(c)}")
 
         tokens.append(Token("NEWLINE", "\n", n, len(linea) + 1))
 
@@ -184,9 +213,7 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         sys.exit("Uso: python lexico.py programa.py")
     try:
-        for tok in analizar(leer(sys.argv[1])):
+        for tok in analizar(leer_o_salir(sys.argv[1])):
             print(tok)
-    except FileNotFoundError:
-        sys.exit(f"No se encontró el archivo {sys.argv[1]}")
     except ErrorLexico as e:
         sys.exit(f"Error léxico: {e}")
